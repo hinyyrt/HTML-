@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Liquid Glass · 树状文件浏览器</title>
+    <style>
+        /* ========== 重置 & 全局 ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+            overflow-x: hidden;
+            padding: 20px;
+        }
+
+        /* ========== 背景光晕 ========== */
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(100px);
+            z-index: 0;
+            animation: glowFloat 10s ease-in-out infinite alternate;
+            pointer-events: none;
+        }
+
+        body::before {
+            width: 600px;
+            height: 600px;
+            top: -200px;
+            right: -150px;
+            background: radial-gradient(circle, rgba(255, 150, 255, 0.3), transparent 70%);
+        }
+
+        body::after {
+            width: 500px;
+            height: 500px;
+            bottom: -150px;
+            left: -100px;
+            background: radial-gradient(circle, rgba(100, 200, 255, 0.25), transparent 70%);
+            animation: glowFloat 12s ease-in-out infinite alternate-reverse;
+        }
+
+        @keyframes glowFloat {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(60px, 40px) scale(1.2); }
+        }
+
+        /* ========== 容器 ========== */
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        /* ========== 头部 ========== */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding: 0 4px;
+        }
+
+        .header h1 {
+            color: #fff;
+            font-size: 26px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff 70%, rgba(255, 255, 255, 0.4));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .header-actions .stats {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 13px;
+            font-weight: 400;
+            background: rgba(255, 255, 255, 0.06);
+            padding: 6px 16px;
+            border-radius: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(8px);
+            white-space: nowrap;
+        }
+
+        /* ========== 玻璃按钮 ========== */
+        .glass-btn {
+            padding: 8px 20px;
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 40px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+            transition: all 0.25s ease;
+            cursor: pointer;
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .glass-btn:hover {
+            background: rgba(255, 255, 255, 0.14);
+            transform: scale(1.04);
+            border-color: rgba(255, 255, 255, 0.18);
+        }
+
+        .glass-btn:active {
+            transform: scale(0.96);
+        }
+
+        .glass-btn.primary {
+            background: rgba(100, 180, 255, 0.15);
+            border-color: rgba(100, 180, 255, 0.2);
+        }
+
+        .glass-btn.primary:hover {
+            background: rgba(100, 180, 255, 0.25);
+        }
+
+        #folderInput {
+            display: none;
+        }
+
+        /* ========== 主玻璃容器 ========== */
+        .main-wrapper {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            min-height: 500px;
+            transition: all 0.3s ease;
+        }
+
+        .main-wrapper::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 24px;
+            background: radial-gradient(
+                ellipse at var(--gx, 50%) var(--gy, 30%),
+                rgba(255, 255, 255, 0.08) 0%,
+                rgba(255, 255, 255, 0.02) 40%,
+                transparent 80%
+            );
+            pointer-events: none;
+            z-index: 0;
+            mix-blend-mode: overlay;
+            transition: background 0.08s ease-out;
+        }
+
+        .main-wrapper::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 24px;
+            background: conic-gradient(
+                from var(--edge, 0deg) at 50% 50%,
+                rgba(255, 255, 255, 0) 0deg,
+                rgba(255, 255, 255, 0.06) 40deg,
+                rgba(255, 255, 255, 0.12) 90deg,
+                rgba(255, 255, 255, 0.06) 140deg,
+                rgba(255, 255, 255, 0) 200deg,
+                rgba(255, 255, 255, 0.04) 280deg,
+                rgba(255, 255, 255, 0) 360deg
+            );
+            pointer-events: none;
+            z-index: 0;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            padding: 2px;
+            transition: background 0.3s ease-out;
+        }
+
+        .main-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ========== 兼容提示 ========== */
+        .compat-notice {
+            padding: 8px 16px;
+            background: rgba(255, 200, 50, 0.06);
+            border: 1px solid rgba(255, 200, 50, 0.08);
+            border-radius: 12px;
+            color: rgba(255, 200, 50, 0.5);
+            font-size: 12px;
+            margin-bottom: 12px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .compat-notice.show {
+            display: flex;
+        }
+
+        /* ========== 空状态 ========== */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            color: rgba(255, 255, 255, 0.3);
+            text-align: center;
+            min-height: 400px;
+        }
+
+        .empty-state .icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state h2 {
+            font-size: 20px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+            opacity: 0.4;
+            max-width: 400px;
+        }
+
+        .empty-state .compat-badge {
+            margin-top: 16px;
+            padding: 6px 16px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 40px;
+            font-size: 12px;
+            opacity: 0.3;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        /* ============================================================
+           树状图核心样式
+           ============================================================ */
+
+        /* 树容器 */
+        .tree-container {
+            padding: 8px 4px;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 600px;
+        }
+
+        .tree-container::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        .tree-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .tree-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+        }
+
+        /* 树节点列表 */
+        .tree-ul {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+            position: relative;
+        }
+
+        .tree-ul .tree-ul {
+            padding-left: 28px;
+            position: relative;
+        }
+
+        /* ===== 垂直连接线（父级到子级） ===== */
+        .tree-ul .tree-ul::before {
+            content: '';
+            position: absolute;
+            left: 12px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(
+                to bottom,
+                rgba(255, 255, 255, 0.08) 0%,
+                rgba(255, 255, 255, 0.15) 30%,
+                rgba(255, 255, 255, 0.08) 70%,
+                rgba(255, 255, 255, 0.02) 100%
+            );
+            border-radius: 2px;
+        }
+
+        /* 每个树项 */
+        .tree-li {
+            position: relative;
+            padding: 2px 0;
+        }
+
+        /* ===== 水平连接线（从垂直线到节点） ===== */
+        .tree-li::before {
+            content: '';
+            position: absolute;
+            left: -14px;
+            top: 50%;
+            width: 14px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            display: none;
+        }
+
+        .tree-ul .tree-ul .tree-li::before {
+            display: block;
+        }
+
+        /* 最后一个子节点：垂直线截断 */
+        .tree-li:last-child > .tree-ul::before {
+            height: 50%;
+            top: 0;
+        }
+
+        /* 节点卡片（玻璃风格） */
+        .tree-node {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 12px 6px 16px;
+            margin: 2px 0;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid transparent;
+            transition: all 0.25s ease;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            position: relative;
+            min-height: 36px;
+            user-select: none;
+        }
+
+        .tree-node:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.06);
+            color: #fff;
+            transform: translateX(4px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .tree-node:active {
+            transform: scale(0.97);
+        }
+
+        /* 节点高光（液态效果） */
+        .tree-node::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 10px;
+            background: radial-gradient(
+                ellipse at var(--nx, 50%) var(--ny, 30%),
+                rgba(255, 255, 255, 0.08) 0%,
+                rgba(255, 255, 255, 0.01) 40%,
+                transparent 80%
+            );
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .tree-node:hover::before {
+            opacity: 1;
+        }
+
+        /* 展开/折叠按钮 */
+        .tree-toggle {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.25);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            flex-shrink: 0;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .tree-node:hover .tree-toggle {
+            color: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .tree-toggle.expanded {
+            transform: rotate(90deg);
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .tree-toggle.leaf {
+            opacity: 0.15;
+            cursor: default;
+            transform: none !important;
+        }
+
+        .tree-toggle.leaf:hover {
+            background: transparent;
+        }
+
+        /* 节点图标 */
+        .tree-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+            width: 26px;
+            text-align: center;
+            filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.03));
+        }
+
+        /* 节点名称 */
+        .tree-label {
+            flex: 1;
+            font-weight: 400;
+            letter-spacing: 0.2px;
+            word-break: break-word;
+            line-height: 1.3;
+        }
+
+        /* 节点元信息 */
+        .tree-meta {
+            font-size: 11px;
+            opacity: 0.25;
+            font-weight: 300;
+            flex-shrink: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .tree-node:hover .tree-meta {
+            opacity: 0.5;
+        }
+
+        /* 子节点容器（展开/折叠） */
+        .tree-children {
+            overflow: hidden;
+            max-height: 0;
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .tree-children.open {
+            max-height: 10000px;
+            opacity: 1;
+        }
+
+        /* 文件节点（非文件夹）轻微样式 */
+        .tree-node.file-node .tree-icon {
+            opacity: 0.7;
+        }
+
+        .tree-node.file-node:hover .tree-icon {
+            opacity: 1;
+        }
+
+        /* 文件夹节点特殊边框 */
+        .tree-node.folder-node {
+            border-color: rgba(100, 180, 255, 0.03);
+        }
+
+        .tree-node.folder-node:hover {
+            border-color: rgba(100, 180, 255, 0.12);
+            background: rgba(100, 180, 255, 0.04);
+        }
+
+        /* ========== 加载动画 ========== */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 60px 20px;
+            gap: 12px;
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .loading .spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid rgba(255, 255, 255, 0.05);
+            border-top-color: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ========== 响应式 ========== */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 20px;
+            }
+            .header-actions .stats {
+                font-size: 11px;
+                padding: 4px 12px;
+            }
+            .glass-btn {
+                font-size: 12px;
+                padding: 6px 14px;
+            }
+            .main-wrapper {
+                padding: 12px;
+                border-radius: 18px;
+            }
+            .tree-node {
+                font-size: 13px;
+                padding: 5px 10px 5px 12px;
+                min-height: 32px;
+                gap: 8px;
+            }
+            .tree-ul .tree-ul {
+                padding-left: 20px;
+            }
+            .tree-ul .tree-ul::before {
+                left: 8px;
+            }
+            .tree-li::before {
+                left: -10px;
+                width: 10px;
+            }
+            .tree-icon {
+                font-size: 16px;
+                width: 22px;
+            }
+            .tree-toggle {
+                width: 18px;
+                height: 18px;
+                font-size: 9px;
+            }
+            .tree-meta {
+                font-size: 10px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+            }
+            .header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+            .header-actions {
+                justify-content: space-between;
+            }
+            .tree-node {
+                font-size: 12px;
+                padding: 4px 8px 4px 10px;
+                min-height: 28px;
+                gap: 6px;
+                border-radius: 8px;
+            }
+            .tree-ul .tree-ul {
+                padding-left: 16px;
+            }
+            .tree-ul .tree-ul::before {
+                left: 6px;
+                width: 1.5px;
+            }
+            .tree-li::before {
+                left: -8px;
+                width: 8px;
+                height: 1.5px;
+            }
+            .tree-icon {
+                font-size: 14px;
+                width: 18px;
+            }
+            .tree-toggle {
+                width: 16px;
+                height: 16px;
+                font-size: 8px;
+            }
+            .tree-meta {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- ====== 头部 ====== -->
+        <div class="header">
+            <h1>🌳 树状文件浏览器</h1>
+            <div class="header-actions">
+                <span class="stats" id="fileStats">就绪</span>
+                <button class="glass-btn primary" id="selectFolderBtn">📁 选择文件夹</button>
+                <input type="file" id="folderInput" webkitdirectory directory />
+            </div>
+        </div>
+
+        <!-- ====== 主容器 ====== -->
+        <div class="main-wrapper" id="mainWrapper">
+            <div class="main-content" id="mainContent">
+                <!-- 兼容性提示 -->
+                <div class="compat-notice" id="compatNotice">
+                    ⚡ 您的浏览器使用传统方式读取文件夹（兼容模式），功能完全正常。
+                </div>
+
+                <!-- 内容区域 -->
+                <div id="contentArea">
+                    <div class="empty-state">
+                        <div class="icon">🌳</div>
+                        <h2>选择文件夹开始</h2>
+                        <p>点击「选择文件夹」浏览本地文件系统<br />树状结构 + 连接线清晰展示层级</p>
+                        <div class="compat-badge">🌐 支持 Chrome / Edge / Firefox</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // 状态管理
+        // ============================================================
+        let currentFiles = [];
+        let isUsingLegacy = false;
+        let treeData = null;
+
+        // ============================================================
+        // DOM 引用
+        // ============================================================
+        const contentArea = document.getElementById('contentArea');
+        const fileStats = document.getElementById('fileStats');
+        const selectFolderBtn = document.getElementById('selectFolderBtn');
+        const folderInput = document.getElementById('folderInput');
+        const mainWrapper = document.getElementById('mainWrapper');
+        const compatNotice = document.getElementById('compatNotice');
+
+        // ============================================================
+        // 工具函数
+        // ============================================================
+        function formatSize(bytes) {
+            if (!bytes || bytes === 0) return '';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            const size = (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0);
+            return size + ' ' + units[i];
+        }
+
+        function getFileIcon(name, isDir) {
+            if (isDir) return '📁';
+            const ext = name.split('.').pop().toLowerCase();
+            const iconMap = {
+                js: '📜',
+                jsx: '⚛️',
+                ts: '📘',
+                tsx: '⚛️',
+                html: '🌐',
+                css: '🎨',
+                scss: '🎨',
+                less: '🎨',
+                json: '📦',
+                md: '📝',
+                txt: '📄',
+                py: '🐍',
+                rb: '💎',
+                go: '🐹',
+                rs: '🦀',
+                c: '⚙️',
+                cpp: '⚙️',
+                java: '☕',
+                php: '🐘',
+                vue: '🟢',
+                svg: '🖼️',
+                png: '🖼️',
+                jpg: '🖼️',
+                jpeg: '🖼️',
+                gif: '🖼️',
+                webp: '🖼️',
+                ico: '🖼️',
+                pdf: '📕',
+                zip: '📦',
+                rar: '📦',
+                tar: '📦',
+                gz: '📦',
+                exe: '⚡',
+                dmg: '💿',
+                app: '📱',
+                mp3: '🎵',
+                mp4: '🎬',
+                mov: '🎬',
+                avi: '🎬',
+                mkv: '🎬',
+                sh: '💻',
+                bash: '💻',
+                zsh: '💻',
+                fish: '🐟',
+                gitignore: '🔒',
+                dockerfile: '🐳',
+                makefile: '🔧',
+                lock: '🔒',
+                log: '📋',
+                csv: '📊',
+                xml: '📋',
+                yaml: '📋',
+                yml: '📋',
+                toml: '📋',
+                ini: '⚙️',
+                conf: '⚙️',
+                cfg: '⚙️',
+            };
+            return iconMap[ext] || '📄';
+        }
+
+        // ============================================================
+        // 构建树结构 (从文件列表)
+        // ============================================================
+        function buildTree(files) {
+            const root = {
+                name: '根目录',
+                isDir: true,
+                children: [],
+                path: '',
+                size: null,
+            };
+
+            const pathMap = { '': root };
+
+            files.forEach(file => {
+                const parts = file.webkitRelativePath.split('/');
+                // 跳过根目录名（第一个部分）
+                const pathParts = parts.slice(1);
+                let current = root;
+                let currentPath = '';
+
+                pathParts.forEach((part, index) => {
+                    const isLast = index === pathParts.length - 1;
+                    const fullPath = currentPath ? currentPath + '/' + part : part;
+
+                    if (isLast) {
+                        // 文件
+                        const fileNode = {
+                            name: part,
+                            isDir: false,
+                            size: file.size,
+                            icon: getFileIcon(part, false),
+                            path: fullPath,
+                            file: file,
+                        };
+                        current.children.push(fileNode);
+                    } else {
+                        // 文件夹
+                        let child = current.children.find(c => c.name === part && c.isDir);
+                        if (!child) {
+                            child = {
+                                name: part,
+                                isDir: true,
+                                children: [],
+                                path: fullPath,
+                                size: null,
+                                icon: '📁',
+                            };
+                            current.children.push(child);
+                        }
+                        current = child;
+                        currentPath = fullPath;
+                    }
+                });
+            });
+
+            // 排序
+            function sortTree(node) {
+                if (node.children) {
+                    node.children.sort((a, b) => {
+                        if (a.isDir && !b.isDir) return -1;
+                        if (!a.isDir && b.isDir) return 1;
+                        return a.name.localeCompare(b.name, undefined, { numeric: true });
+                    });
+                    node.children.forEach(child => sortTree(child));
+                }
+            }
+            sortTree(root);
+
+            return root;
+        }
+
+        // ============================================================
+        // 渲染树状图
+        // ============================================================
+        function renderTree(node, depth = 0) {
+            const ul = document.createElement('ul');
+            ul.className = 'tree-ul';
+
+            // 对子节点排序（文件夹在前）
+            const children = node.children || [];
+            const sorted = [...children].sort((a, b) => {
+                if (a.isDir && !b.isDir) return -1;
+                if (!a.isDir && b.isDir) return 1;
+                return a.name.localeCompare(b.name, undefined, { numeric: true });
+            });
+
+            sorted.forEach((child, index) => {
+                const li = document.createElement('li');
+                li.className = 'tree-li';
+
+                // 节点卡片
+                const nodeDiv = document.createElement('div');
+                nodeDiv.className = `tree-node ${child.isDir ? 'folder-node' : 'file-node'}`;
+                nodeDiv.dataset.path = child.path || child.name;
+
+                // ---- Toggle ----
+                const toggle = document.createElement('span');
+                toggle.className = 'tree-toggle';
+                if (child.isDir && child.children && child.children.length > 0) {
+                    toggle.textContent = '▶';
+                    toggle.dataset.expanded = 'false';
+                } else {
+                    toggle.className = 'tree-toggle leaf';
+                    toggle.textContent = '•';
+                }
+                nodeDiv.appendChild(toggle);
+
+                // ---- Icon ----
+                const icon = document.createElement('span');
+                icon.className = 'tree-icon';
+                icon.textContent = child.icon || (child.isDir ? '📁' : '📄');
+                nodeDiv.appendChild(icon);
+
+                // ---- Label ----
+                const label = document.createElement('span');
+                label.className = 'tree-label';
+                label.textContent = child.name;
+                nodeDiv.appendChild(label);
+
+                // ---- Meta ----
+                if (!child.isDir && child.size) {
+                    const meta = document.createElement('span');
+                    meta.className = 'tree-meta';
+                    meta.textContent = formatSize(child.size);
+                    nodeDiv.appendChild(meta);
+                } else if (child.isDir && child.children) {
+                    const fileCount = child.children.filter(c => !c.isDir).length;
+                    const dirCount = child.children.filter(c => c.isDir).length;
+                    if (fileCount > 0 || dirCount > 0) {
+                        const meta = document.createElement('span');
+                        meta.className = 'tree-meta';
+                        meta.textContent = `📄${fileCount} 📁${dirCount}`;
+                        nodeDiv.appendChild(meta);
+                    }
+                }
+
+                li.appendChild(nodeDiv);
+
+                // ---- 子节点 ----
+                if (child.isDir && child.children && child.children.length > 0) {
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = 'tree-children';
+                    const childUl = renderTree(child, depth + 1);
+                    childrenContainer.appendChild(childUl);
+                    li.appendChild(childrenContainer);
+
+                    // 点击切换展开/折叠
+                    nodeDiv.addEventListener('click', (e) => {
+                        // 防止点击子节点冒泡
+                        if (e.target.closest('.tree-node') !== nodeDiv) return;
+                        toggleTree(childrenContainer, toggle);
+                    });
+
+                    // 双击展开全部子级
+                    nodeDiv.addEventListener('dblclick', (e) => {
+                        e.stopPropagation();
+                        expandAllChildren(li);
+                    });
+                } else if (!child.isDir) {
+                    // 文件点击预览
+                    nodeDiv.addEventListener('click', () => {
+                        nodeDiv.style.transform = 'scale(0.95)';
+                        setTimeout(() => { nodeDiv.style.transform = ''; }, 150);
+                        if (child.file) {
+                            try {
+                                const url = URL.createObjectURL(child.file);
+                                window.open(url, '_blank');
+                                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                            } catch (e) {
+                                console.warn('无法打开文件:', e);
+                            }
+                        }
+                        console.log(`📄 选中: ${child.name}`);
+                    });
+                }
+
+                // ---- 悬停高光 ----
+                nodeDiv.addEventListener('mousemove', (e) => {
+                    const rect = nodeDiv.getBoundingClientRect();
+                    const x = (e.clientX - rect.left) / rect.width;
+                    const y = (e.clientY - rect.top) / rect.height;
+                    nodeDiv.style.setProperty('--nx', `${x * 100}%`);
+                    nodeDiv.style.setProperty('--ny', `${y * 100}%`);
+                });
+
+                ul.appendChild(li);
+            });
+
+            return ul;
+        }
+
+        // ============================================================
+        // 展开/折叠
+        // ============================================================
+        function toggleTree(container, toggle) {
+            const isOpen = container.classList.contains('open');
+            if (isOpen) {
+                container.classList.remove('open');
+                toggle.textContent = '▶';
+                toggle.classList.remove('expanded');
+            } else {
+                container.classList.add('open');
+                toggle.textContent = '▼';
+                toggle.classList.add('expanded');
+            }
+        }
+
+        function expandAllChildren(li) {
+            const containers = li.querySelectorAll('.tree-children');
+            const toggles = li.querySelectorAll('.tree-toggle:not(.leaf)');
+            containers.forEach(c => c.classList.add('open'));
+            toggles.forEach(t => {
+                t.textContent = '▼';
+                t.classList.add('expanded');
+            });
+        }
+
+        function expandAll(root) {
+            const containers = root.querySelectorAll('.tree-children');
+            const toggles = root.querySelectorAll('.tree-toggle:not(.leaf)');
+            containers.forEach(c => c.classList.add('open'));
+            toggles.forEach(t => {
+                t.textContent = '▼';
+                t.classList.add('expanded');
+            });
+        }
+
+        function collapseAll(root) {
+            const containers = root.querySelectorAll('.tree-children');
+            const toggles = root.querySelectorAll('.tree-toggle:not(.leaf)');
+            containers.forEach(c => c.classList.remove('open'));
+            toggles.forEach(t => {
+                t.textContent = '▶';
+                t.classList.remove('expanded');
+            });
+        }
+
+        // ============================================================
+        // 统计
+        // ============================================================
+        function countNodes(node) {
+            let files = 0;
+            let dirs = 0;
+            if (node.isDir) dirs++;
+            else files++;
+            if (node.children) {
+                node.children.forEach(child => {
+                    const counts = countNodes(child);
+                    files += counts.files;
+                    dirs += counts.dirs;
+                });
+            }
+            return { files, dirs };
+        }
+
+        // ============================================================
+        // 加载文件夹（传统模式）
+        // ============================================================
+        function loadFolder(files) {
+            isUsingLegacy = true;
+            compatNotice.classList.add('show');
+
+            currentFiles = Array.from(files);
+            treeData = buildTree(currentFiles);
+
+            // 显示统计
+            const stats = countNodes(treeData);
+            fileStats.textContent = `📁 ${stats.dirs - 1} 文件夹 · 📄 ${stats.files} 文件`;
+
+            // 渲染树
+            contentArea.innerHTML = '';
+            const treeContainer = document.createElement('div');
+            treeContainer.className = 'tree-container';
+            treeContainer.id = 'treeContainer';
+
+            const treeUl = renderTree(treeData);
+            treeContainer.appendChild(treeUl);
+
+            // 添加工具栏
+            const toolbar = document.createElement('div');
+            toolbar.style.cssText = `
+                display: flex; gap: 8px; padding: 12px 4px 4px;
+                border-top: 1px solid rgba(255,255,255,0.04);
+                margin-top: 8px; flex-wrap: wrap;
+            `;
+            toolbar.innerHTML = `
+                <button class="glass-btn" id="expandAllBtn" style="font-size:12px;padding:4px 14px;">📂 全部展开</button>
+                <button class="glass-btn" id="collapseAllBtn" style="font-size:12px;padding:4px 14px;">📁 全部折叠</button>
+                <span style="flex:1;"></span>
+                <span style="color:rgba(255,255,255,0.15);font-size:11px;align-self:center;">
+                    ✦ 点击文件夹展开 · 双击展开全部子级
+                </span>
+            `;
+            treeContainer.appendChild(toolbar);
+
+            contentArea.appendChild(treeContainer);
+
+            // 工具栏事件
+            document.getElementById('expandAllBtn').addEventListener('click', () => {
+                expandAll(treeContainer);
+            });
+            document.getElementById('collapseAllBtn').addEventListener('click', () => {
+                collapseAll(treeContainer);
+            });
+
+            // 重置 input
+            folderInput.value = '';
+        }
+
+        // ============================================================
+        // 选择文件夹
+        // ============================================================
+        function selectFolder() {
+            folderInput.click();
+        }
+
+        folderInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            loadFolder(files);
+        });
+
+        // ============================================================
+        // 主容器液态玻璃高光
+        // ============================================================
+        mainWrapper.addEventListener('mousemove', (e) => {
+            const rect = mainWrapper.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / rect.width;
+            const y = (e.clientY - rect.top) / rect.height;
+            mainWrapper.style.setProperty('--gx', `${x * 100}%`);
+            mainWrapper.style.setProperty('--gy', `${y * 100}%`);
+
+            const angle = Math.atan2(y - 0.5, x - 0.5) * (180 / Math.PI);
+            mainWrapper.style.setProperty('--edge', `${angle + 90}deg`);
+        });
+
+        mainWrapper.addEventListener('mouseleave', () => {
+            mainWrapper.style.setProperty('--gx', '50%');
+            mainWrapper.style.setProperty('--gy', '30%');
+        });
+
+        let glowTime = 0;
+        setInterval(() => {
+            if (!mainWrapper.matches(':hover')) {
+                glowTime += 0.3;
+                const angle = Math.sin(glowTime * 0.04) * 25 + Math.cos(glowTime * 0.025) * 15;
+                mainWrapper.style.setProperty('--edge', `${angle}deg`);
+            }
+        }, 50);
+
+        // ============================================================
+        // 事件绑定
+        // ============================================================
+        selectFolderBtn.addEventListener('click', selectFolder);
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+                e.preventDefault();
+                selectFolderBtn.click();
+            }
+        });
+
+        // ============================================================
+        // 启动
+        // ============================================================
+        console.log('🌳 液态玻璃树状文件浏览器已加载');
+        console.log('💡 点击「选择文件夹」或按 Ctrl+O 开始浏览');
+        console.log('📌 支持 Chrome / Edge / Firefox');
+    </script>
+</body>
+</html>
